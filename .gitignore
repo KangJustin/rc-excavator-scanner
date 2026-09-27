@@ -1,0 +1,33 @@
+.venv/
+__pycache__/
+*.pyc
+sessions/
+.pytest_cache/
+captures/
+reconstructions/
+check_frame.jpg
+camera_snapshots/
+.DS_Store
+*.log
+
+# PI recording data / local ids
+episodes/
+shards/
+.pi/
+
+# scan2cad output / infer.py --record-frames (see scan2cad/scan2cad.py, record/infer.py)
+photos/
+runs/
+Scanned_Models/
+
+# OpenMVS + its submodules, built locally per README's own
+# `git clone --recurse-submodules` step -- not this project's code
+openMVS/
+vcglib/
+tinyply/
+TinyEXIF/
+TinyNPY/
+tinygltf/
+PoseLib/
+halfmesh/
+thread-pool/

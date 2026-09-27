@@ -1,0 +1,8 @@
+# Core
+numpy>=1.24
+opencv-python>=4.8        # camera capture + live preview (needs GUI build; not -headless)
+pyserial>=3.5             # control/ -> ESP32 link
+open3d>=0.18              # Poisson meshing + STL export
+
+# Dev
+pytest>=8

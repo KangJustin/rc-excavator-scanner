@@ -1,0 +1,24 @@
+{
+  "episode_id": "excavator-20260926-222130",
+  "task": "orbit around the object",
+  "fps": 10,
+  "format_version": 2,
+  "control_names": [
+    "W",
+    "O",
+    "L",
+    "A"
+  ],
+  "complete": true,
+  "steps": 101,
+  "achieved_fps": 9.244,
+  "max_gap_ms": 210.8,
+  "frame_size": [
+    640,
+    480
+  ],
+  "review": "unreviewed",
+  "timestamp_source": "laptop_receive",
+  "rig_id": "excavator",
+  "gap_warning": true
+}

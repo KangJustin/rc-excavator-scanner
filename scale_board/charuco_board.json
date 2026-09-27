@@ -1,0 +1,14 @@
+{
+  "squares_x": 5,
+  "squares_y": 7,
+  "square_mm": 30.0,
+  "marker_mm": 22.5,
+  "dictionary": "DICT_4X4_50",
+  "board_width_mm": 150.0,
+  "board_height_mm": 210.0,
+  "inner_corners": 24,
+  "opencv_version": "5.0.0",
+  "legacy_pattern": false,
+  "printed_square_mm_measured": null,
+  "note": "After printing, measure one square with a ruler. If it is not 30.0 mm, put the real value in printed_square_mm_measured; software should prefer it over square_mm."
+}

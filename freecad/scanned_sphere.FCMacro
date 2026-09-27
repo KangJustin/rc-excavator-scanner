@@ -1,0 +1,159 @@
+# -*- coding: utf-8 -*-
+"""
+Parametric sphere from a 3D scan  (basketball, session 2026-09-25_2257)
+
+Builds a PartDesign Body with an editable feature tree:
+
+    Params (Spreadsheet)      <- change Diameter here and the model regenerates
+    Body
+      ProfileSketch           fully constrained half-disc; its "Diameter" constraint is
+                              bound by expression to Params.Diameter
+      SphereRevolution        360-degree revolve of the profile about the sketch's vertical axis
+
+The sphere sits on the ground plane (lowest point at Z = 0), like the scanned object did.
+
+How to use:  FreeCAD > Macro > Macros... (or open this file in the macro editor) > Execute.
+To resize afterwards WITHOUT rerunning: double-click cell B1 in the Params spreadsheet, type a new
+value (e.g. =110 mm), and recompute (Ctrl+R).  Tested on FreeCAD 1.1 (uses AttachmentSupport with a
+fallback to Support for 0.21).
+"""
+import math
+
+import FreeCAD as App
+import Part
+import Sketcher
+from FreeCAD import Vector
+
+# =====================================================================================
+#  EDIT THESE, then run the macro again
+# =====================================================================================
+DOC_NAME = "ScannedBall"
+
+# The ball's REAL diameter in millimetres (44 mm, measured with a ruler). The scan agrees: its sphere
+# fit, bounding boxes and height-above-floor all land within ~1-3% of this once scaled by it.
+DIAMETER_MM = 44.0
+
+# True = DIAMETER_MM is a size you actually measured. If you copy this macro for another object
+# and forget to measure it, set this to False: the macro then prints a warning and tags the
+# document "PLACEHOLDER SIZE" so a guessed size can't be mistaken for a real one.
+SCALE_CONFIRMED = True
+
+# Optional: write a print-ready STL here, e.g. "/Users/you/Desktop/ball.stl". Empty = don't export.
+EXPORT_STL_PATH = ""
+
+# Optional: save the editable FreeCAD document (keeps the feature tree + spreadsheet). Empty = don't save.
+SAVE_FCSTD_PATH = ""
+
+# =====================================================================================
+#  What the scan measured (informational; photogrammetry has arbitrary scale, so these are
+#  in raw model units, NOT millimetres). Source: reconstructions/2026-09-25_2257/measurements.json
+# =====================================================================================
+SCAN_UNITS = {
+    "likely_shape": "sphere",  # sphere fit: good (rms 3.2% of radius); cylinder fit: poor (12.6%)
+    "sphere_fit_diameter": 0.5528,
+    "axis_aligned_bbox": (0.566, 0.571, 0.5636),  # X, Y, Z(up)
+    "oriented_bbox": (0.5623, 0.5586, 0.5561),
+    "obb_fill_ratio": 0.56,  # sphere ~0.52, cylinder ~0.79, box ~1.0
+}
+# Scale used to get millimetres from the scan:  MM_PER_UNIT = 44 / 0.5528 = 79.594 mm per model unit
+# (i.e. real_diameter_mm / SCAN_UNITS["sphere_fit_diameter"]).
+
+# =====================================================================================
+#  Build (you shouldn't need to edit below this line)
+# =====================================================================================
+
+
+def build(diameter_mm=DIAMETER_MM, doc_name=DOC_NAME):
+    if not diameter_mm > 0:
+        raise ValueError("DIAMETER_MM must be positive")
+    label = doc_name + ("" if SCALE_CONFIRMED else " (PLACEHOLDER SIZE)")
+    doc = App.newDocument(doc_name)
+    doc.Label = label
+
+    # ---- Parameters live in a spreadsheet so they can be edited without touching code -------
+    sheet = doc.addObject("Spreadsheet::Sheet", "Params")
+    sheet.set("A1", "Diameter")
+    sheet.set("B1", "=%r mm" % float(diameter_mm))
+    sheet.setAlias("B1", "Diameter")
+    sheet.set("A2", "Radius")
+    sheet.set("B2", "=Diameter / 2")
+    sheet.setAlias("B2", "Radius")
+    sheet.set("A3", "Volume (reference)")
+    sheet.set("B3", "=4 / 3 * pi * Radius ^ 3")
+    sheet.setAlias("B3", "VolumeRef")
+    sheet.set("A4", "Size measured?")
+    sheet.set("B4", "yes" if SCALE_CONFIRMED else "NO - placeholder, set DIAMETER_MM")
+    doc.recompute()
+
+    # ---- Body + profile sketch on the XZ plane (sketch X = world X, sketch Y = world Z) ----
+    body = doc.addObject("PartDesign::Body", "Body")
+    xz_plane = next(o for o in body.Origin.OriginFeatures if o.Role == "XZ_Plane")
+    sketch = body.newObject("Sketcher::SketchObject", "ProfileSketch")
+    if hasattr(sketch, "AttachmentSupport"):  # FreeCAD 1.0+
+        sketch.AttachmentSupport = [(xz_plane, "")]
+    else:  # FreeCAD 0.21
+        sketch.Support = (xz_plane, [""])
+    sketch.MapMode = "FlatFace"
+
+    # Half-disc: a vertical line from the ground (0,0) up to (0,D), closed by a semicircle bulging to +X.
+    d, r = float(diameter_mm), float(diameter_mm) / 2
+    line = sketch.addGeometry(Part.LineSegment(Vector(0, 0, 0), Vector(0, d, 0)), False)
+    arc = sketch.addGeometry(
+        Part.ArcOfCircle(Part.Circle(Vector(0, r, 0), Vector(0, 0, 1), r), -math.pi / 2, math.pi / 2), False)
+    C = Sketcher.Constraint
+    sketch.addConstraint(C("Coincident", line, 1, -1, 1))  # line start sits on the sketch origin
+    sketch.addConstraint(C("Vertical", line))
+    sketch.addConstraint(C("Coincident", arc, 1, line, 1))  # arc start = line start
+    sketch.addConstraint(C("Coincident", arc, 2, line, 2))  # arc end   = line end
+    sketch.addConstraint(C("PointOnObject", arc, 3, line))  # arc centre on the line => a true semicircle
+    i = sketch.addConstraint(C("Distance", line, d))
+    sketch.renameConstraint(i, "Diameter")
+    sketch.setExpression("Constraints.Diameter", "Params.Diameter")  # <- the parametric link
+    doc.recompute()
+
+    # ---- Revolve the half-disc around the sketch's vertical axis => sphere ---------------------
+    rev = body.newObject("PartDesign::Revolution", "SphereRevolution")
+    rev.Profile = sketch
+    rev.ReferenceAxis = (sketch, ["V_Axis"])
+    rev.Angle = 360.0
+    doc.recompute()
+
+    # ---- Check our own work ---------------------------------------------------------------------
+    shape = body.Shape
+    expected = 4.0 / 3.0 * math.pi * r ** 3
+    if not shape.isValid() or abs(shape.Volume - expected) > 0.005 * expected:
+        raise RuntimeError("Sphere build check failed: volume %.1f vs expected %.1f mm^3 (valid=%s)"
+                           % (shape.Volume, expected, shape.isValid()))
+
+    if App.GuiUp:
+        try:
+            import FreeCADGui
+            # Show the finished solid, hide the construction sketch. (Set explicitly: a document that is
+            # saved without GUI state opens with the Body hidden.)
+            gdoc = FreeCADGui.getDocument(doc.Name)
+            gdoc.getObject("Body").Visibility = True
+            gdoc.getObject("ProfileSketch").Visibility = False
+            FreeCADGui.ActiveDocument.ActiveView.viewIsometric()
+            FreeCADGui.SendMsgToActiveView("ViewFit")
+        except Exception:
+            pass
+
+    App.Console.PrintMessage(
+        "Built %s: diameter %.2f mm, volume %.0f mm^3 (%.1f mL), height %.2f mm\n"
+        % (doc_name, d, shape.Volume, shape.Volume / 1000.0, shape.BoundBox.ZLength))
+    if not SCALE_CONFIRMED:
+        App.Console.PrintWarning(
+            "\n*** DIAMETER_MM = %g is a PLACEHOLDER, not a measured size. Measure the real ball, set "
+            "DIAMETER_MM and SCALE_CONFIRMED = True, and run again. ***\n\n" % d)
+
+    if EXPORT_STL_PATH:
+        import Mesh
+        Mesh.export([body], EXPORT_STL_PATH)
+        App.Console.PrintMessage("Exported %s\n" % EXPORT_STL_PATH)
+    if SAVE_FCSTD_PATH:
+        doc.saveAs(SAVE_FCSTD_PATH)
+        App.Console.PrintMessage("Saved %s\n" % SAVE_FCSTD_PATH)
+    return doc
+
+
+build()
